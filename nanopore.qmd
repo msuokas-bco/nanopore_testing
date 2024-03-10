@@ -1,6 +1,6 @@
 ---
 title: "Nanopore_16S_analysis"
-format: html
+format: pdf
 editor: visual
 ---
 
