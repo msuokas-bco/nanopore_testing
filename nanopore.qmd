@@ -65,6 +65,7 @@ library(ggplot2)
 library(ggthemes)
 library(kableExtra)
 library(reshape2)
+library(dplyr)
 ```
 
 ### Zymo Research mock community samples
@@ -93,9 +94,9 @@ Creating data frame from dada2 results
 
 ```{r mock_dada_df, message=FALSE, warning=FALSE}
 #agglomeration to genus and calculating relabundance
-zymo_mock_dada <- agglomerateByRank(zymo_mock_dada, rank="Genus")
+zymo_mock_dada <- agglomerateByRank(zymo_mock_dada, rank="Genus", onRankOnly=TRUE)
 zymo_mock_dada <- transformAssay(zymo_mock_dada, assay.type="counts",
-                                 method="relabundance", onRankOnly=TRUE)
+                                 method="relabundance")
 #create dataframe and table alphabetically sorted
 zm_dada <- data.frame(assays(zymo_mock_dada)$relabundance)
 zm_dada <- zm_dada[order(row.names(zm_dada)),]
@@ -108,9 +109,9 @@ Creating data.frame from vsearch results
 
 ```{r mock_vsearch_df, warning=FALSE, message=FALSE}
 #agglomeration to genus and calculating relabundance
-zymo_mock_vsearch <- agglomerateByRank(zymo_mock_vsearch, rank="Genus")
+zymo_mock_vsearch <- agglomerateByRank(zymo_mock_vsearch, rank="Genus",  onRankOnly=TRUE)
 zymo_mock_vsearch <- transformAssay(zymo_mock_vsearch, assay.type="counts",
-                                    method="relabundance", onRankOnly=TRUE)
+                                    method="relabundance")
 #create dataframe and table alphabetically sorted
 zm_vsearch <- data.frame(assays(zymo_mock_vsearch)$relabundance)
 zm_vsearch <- zm_vsearch[1:8,]
@@ -136,6 +137,99 @@ geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=
 plot
 ```
 
-In this sample set, differences between dada and vsearch look minor. However, dada looks more sensitive as two out of four samples have less variants than supposed to.
+In this sample set, differences between dada and vsearch are minor. However, dada looks more likely to miss taxa.
 
-When compared to real composition, some genus are underpresented (Salmonella, E. coli) and some overpresented (Bacillus, Streptococcus.
+When compared to real composition, some bacteria are underpresented (Salmonella, E. coli) and some overpresented (Bacillus, Streptococcus).
+
+Note also, that results compared to original article using Silva reference data are widely different.
+
+### Zymo Gut Mock Community Samples
+
+Importing gut mock community data from Qiime 2 files.
+
+```{r import_data_files, message=FALSE, warning=FALSE}
+#dada2 results
+gut_dada <- loadFromQIIME2(featureTableFile="Qiime2_files/gut_mock_community/gut_dada_asv_table.qza", taxonomyTableFile="Qiime2_files/gut_mock_community/gut_dada_taxa.qza", sampleMetaFile="Qiime2_files/gut_mock_community/gut_dada.tsv")
+#clustering_results
+gut_vsearch <- loadFromQIIME2(featureTableFile="Qiime2_files/gut_mock_community/gut_vsearch_otu_table.qza", taxonomyTableFile="Qiime2_files/gut_mock_community/gut_vsearch_taxa.qza", sampleMetaFile="Qiime2_files/gut_mock_community/gut_clust.tsv")
+```
+
+Creating dataframe containing true community composition
+
+```{r gut_kit_values, message=FALSE, warning=FALSE}
+#create vectors and alphabetically sorted dataframe containing real mock composition
+Genus <- c("Akkermansia", "Bacteroides", "Bifidobacterium", "Clostridioides", "Clostridium", "E. coli", "Enterococcus", "Faecalibacterium", "Fusobacterium", "Lactobacillus", "Methanobrevibacter", "Prevotella", "Roseburia", "Salmonella", "Veillonella")
+gut_abundance <- c(0.01, 0.099, 0.089, 0.026, 0.000002,0.121,0.00001, 0.176,0.175,0.096,0.001,0.05,0.099,0.0001,0.159)
+gut_community <- data.frame(Genus, gut_abundance)
+```
+
+Creating dataframe from dada denoiser results
+
+```{r mock_dada_df, message=FALSE, warning=FALSE}
+#agglomeration to genus and calculating relabundance
+gut_dada <- agglomerateByRank(gut_dada, rank="Genus",  onRankOnly=TRUE)
+gut_dada <- transformAssay(gut_dada, assay.type="counts",
+                                 method="relabundance")
+#create dataframe and table alphabetically sorted
+gdada <- data.frame(assays(gut_dada)$relabundance)
+gdada <- gdada[order(row.names(gdada)),]
+#rownames(gdada) <- genus 
+gdada <- tibble::rownames_to_column(gdada)
+gdada$rowname <- c("Bacteroides","Clostridioides","E. coli","Faecalibacterium","Fusobacterium", "Prevotella","Veillonella")
+colnames(gdada) <- c("Genus", "Gut01", "Gut02", "Gut03", "Gut04")
+kable(gdada, digits=2)
+```
+
+Melting data and creating plot object
+
+```{r dada plot object, warning=FALSE, message=FALSE}
+#merging data and replacing NA values with 0
+dada_kit <- merge(gdada, gut_community, all = TRUE)
+dada_kit[is.na(dada_kit)] <- 0
+molten_gutdada <- melt(dada_kit, id.vars = 1)
+plot_dgut <- ggplot(molten_gutdada, aes(x=variable,y=value, fill=Genus)) + 
+geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=9) + scale_fill_pander()
+```
+
+Plotting dada results
+
+```{r}
+plot_dgut
+```
+
+In more complex mock community, denoising performance gets markedly worse.
+
+```{r mock_vsearch_df, warning=FALSE, message=FALSE}
+#agglomeration to genus and calculating relabundance
+gut_vsearch <- agglomerateByRank(gut_vsearch, rank="Genus", onRankOnly=TRUE)
+gut_vsearch <- transformAssay(gut_vsearch, assay.type="counts",
+                                 method="relabundance")
+#create dataframe and table alphabetically sorted
+g_vsearch <- data.frame(assays(gut_vsearch)$relabundance)
+#g_vsearch <- zm_vsearch[1:8,]
+g_vsearch <- g_vsearch[order(row.names(g_vsearch)),]
+#rownames(zm_vsearch) <- genus
+g_vsearch <- tibble::rownames_to_column(g_vsearch)
+vsearch_vector <- g_vsearch$rowname
+modified_vector <- sub("^g__", "", vsearch_vector)
+g_vsearch$rowname <- modified_vector
+colnames(g_vsearch) <- c("Genus", "Gut01", "Gut02", "Gut03", "Gut04")
+g_vsearch[11,1] <- "E. coli"
+g_vsearch <- g_vsearch[-c(2,3,6:8,10,14:15,17,20),]
+kable(g_vsearch, digits=2)
+```
+
+```{r dada plot object, warning=FALSE, message=FALSE}
+#merging data and replacing NA values with 0
+vsearch_kit <- merge(g_vsearch, gut_community, all = TRUE)
+vsearch_kit[is.na(vsearch_kit)] <- 0
+molten_gutvsearch <- melt(vsearch_kit, id.vars = 1)
+plot_vgut <- ggplot(molten_gutvsearch, aes(x=variable,y=value, fill=Genus)) + 
+geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=7) + scale_fill_pander()
+```
+
+```{r}
+plot_vgut
+```
+
+Using otu clustering by vsearch results from gut mock community are much better.
