@@ -1,16 +1,16 @@
 ---
-title: "Nanopore_16S_analysis"
-format: docx
+title: "Nanopore_16S_rRNA_analysis"
+format: pdf
 editor: visual
 ---
 
 ## Analysing nanopore 16S rRNA sequences
 
-Data source is from article "RESCUE: a validated Nanopore pipeline to classify bacteria through long-read, 16S-ITS-23S rRNA sequencing." by Petrone et. al (2023). Sequences were downloaded from SRA and grouped into three.
+Data source is from a article "RESCUE: a validated Nanopore pipeline to classify bacteria through long-read, 16S-ITS-23S rRNA sequencing." by Petrone et. al (2023). Sequences were downloaded from SRA and grouped into three separate sets.
 
-Link to article: `https://doi.org/10.3389/fmicb.2023.1201064`
+Link to the article: `https://doi.org/10.3389/fmicb.2023.1201064`
 
-Zymo research mock community sample and gut mock community each contain 4 replicate samples. Oral microbiome set contains 20 saliva samples.
+Zymo research mock community sample and gut mock community each contain 4 replicate samples sequenced on separate flow-cells. Oral microbiome set contain 20 saliva samples.
 
 ### Preprosessing
 
@@ -18,9 +18,9 @@ All reads were trimmed with cutadapt using the 1492R primer sequence
 
 -   cutadapt -g CGGTTACCTTGTTACGACTT --rc -o file input_file
 
-*Note, that sequences are reverse complement and 16S rRNA sequence starts from 3' end*
+*Note, that sequences are reverse complement. Thus, 16S rRNA sequence starts from 3' end*
 
-*About 85-90 % contained correct primer sequence on default error rate 0.1.*
+*\~85-90 % of total reads contained correct primer sequence on cutadapt default error rate 0.1.*
 
 ### Qiime 2 vsearch otu clustering workflow
 
@@ -46,7 +46,7 @@ Workflow: Importing sequences, dereplication, clustering, chimera check, chimera
 
 Workflow: Importing sequences, denoising and feature classification.
 
-Note. Using value 1 error per 100 bp sequence produces best compromise.
+*Note. Using values 1-1.5 errors per 100 bp sequence produced best compromise.*
 
 1.  qiime tools import --type 'SampleData\[SequencesWithQuality\]'  --input-path seq/manifest  --output-path output.qza --input-format SingleEndFastqManifestPhred33V2
 
@@ -56,139 +56,177 @@ Note. Using value 1 error per 100 bp sequence produces best compromise.
 
 ### Loading R libraries
 
-```{r load_ibraries, warning=FALSE, message=FALSE}
-#required libraries
+```{r load_libraries, warning=FALSE, message=FALSE}
+#libraries
 library(mia)
 library(miaViz)
 library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(dplyr)
+library(reshape2)
 library(ggplot2)
 library(ggthemes)
-library(kableExtra)
-library(reshape2)
-library(dplyr)
 ```
 
 ### Zymo Research mock community samples
 
-Importing data from qiime 2 files
+Importing data from Qiime2 to a TreeSummarizedExperiment object. Dimension results describe size of each datatable (number of variants and samples).
 
-```{r import_data_files, message=FALSE, warning=FALSE}
-#dada2 results
-zymo_mock_dada <- loadFromQIIME2(featureTableFile="Qiime2_files/mock_community/mock_dada_asv_table.qza", taxonomyTableFile="Qiime2_files/mock_community/mock_dada_taxa.qza", sampleMetaFile="Qiime2_files/mock_community/meta_dada.tsv")
+```{r import_mock_files, message=FALSE, warning=FALSE}
+#dada2_results
+zymo_mock_dada <- loadFromQIIME2(
+  featureTableFile= "Qiime2_files/mock_community/mock_dada_asv_table.qza",
+  taxonomyTableFile= "Qiime2_files/mock_community/mock_dada_taxa.qza",
+  sampleMetaFile= "Qiime2_files/mock_community/meta_dada.tsv")
 #clustering_results
-zymo_mock_vsearch <- loadFromQIIME2(featureTableFile="Qiime2_files/mock_community/mock_vsearch_otu_table.qza", taxonomyTableFile="Qiime2_files/mock_community/mock_vsearch_taxa.qza", sampleMetaFile="Qiime2_files/mock_community/meta_clust.tsv")
+zymo_mock_vsearch <- loadFromQIIME2(
+  featureTableFile = "Qiime2_files/mock_community/mock_vsearch_otu_table.qza",
+  taxonomyTableFile = "Qiime2_files/mock_community/mock_vsearch_taxa.qza",
+  sampleMetaFile = "Qiime2_files/mock_community/meta_clust.tsv")
+#tse_dimensions
+dim(zymo_mock_dada)
+dim(zymo_mock_vsearch)
 ```
 
-Creating dataframe from zymo kit data
+Creating a dataframe containing true composition of the mock sample
 
 ```{r zymo_kit_values, message=FALSE, warning=FALSE}
-#create vectors and alphabetically sorted dataframe containing real mock composition
-genus <- c("Bacillus", "Enterococcus", "Escherichia-Shigella", "Lactobacillus", "Listeria", "Pseudomonas", "Salmonella", "Staphyloccus")
-abundance <- c(0.174,0.10,0.101,0.184,0.141,0.042,0.104,0.155)
-comparison <- data.frame(abundance)
-rownames(comparison) <- genus
-comparison <- tibble::rownames_to_column(comparison)
+#create alphabetically sorted dataframe containing theoretical composition
+rowname <- c("Bacillus", "Enterococcus", "Escherichia-Shigella",
+             "Lactobacillus", "Listeria", "Pseudomonas", "Salmonella",
+             "Staphyloccus")
+abundance <- c(0.174, 0.10, 0.101, 0.184, 0.141, 0.042, 0.104, 0.155)
+mock <- data.frame(rowname, abundance)
 ```
 
-Creating data frame from dada2 results
+Creating dataframe from dada2 results
 
 ```{r mock_dada_df, message=FALSE, warning=FALSE}
-#agglomeration to genus and calculating relabundance
-zymo_mock_dada <- agglomerateByRank(zymo_mock_dada, rank="Genus", onRankOnly=TRUE)
+#agglomerate to genus level and calculate relabundance
+zymo_mock_dada <- agglomerateByRank(zymo_mock_dada, rank="Genus",
+                                    onRankOnly=TRUE)
 zymo_mock_dada <- transformAssay(zymo_mock_dada, assay.type="counts",
                                  method="relabundance")
-#create dataframe and table alphabetically sorted
-zm_dada <- data.frame(assays(zymo_mock_dada)$relabundance)
-zm_dada <- zm_dada[order(row.names(zm_dada)),]
-rownames(zm_dada) <- genus 
-zm_dada <- tibble::rownames_to_column(zm_dada)
-kable(zm_dada, digits=2)
+#create dataframe and sorting alphabetically
+zymo_df_dada <- data.frame(assays(zymo_mock_dada)$relabundance)
+zymo_df_dada <- zymo_df_dada[order(row.names(zymo_df_dada)),]
+rownames(zymo_df_dada) <- rowname 
+zymo_df_dada <- tibble::rownames_to_column(zymo_df_dada)
+kable(zymo_df_dada, digits=2)
 ```
 
-Creating data.frame from vsearch results
+Creating dataframe from vsearch results
 
 ```{r mock_vsearch_df, warning=FALSE, message=FALSE}
-#agglomeration to genus and calculating relabundance
-zymo_mock_vsearch <- agglomerateByRank(zymo_mock_vsearch, rank="Genus",  onRankOnly=TRUE)
+#agglomerate to genus level and calculate relabundance
+zymo_mock_vsearch <- agglomerateByRank(zymo_mock_vsearch, rank="Genus",
+                                       onRankOnly=TRUE)
 zymo_mock_vsearch <- transformAssay(zymo_mock_vsearch, assay.type="counts",
                                     method="relabundance")
-#create dataframe and table alphabetically sorted
-zm_vsearch <- data.frame(assays(zymo_mock_vsearch)$relabundance)
-zm_vsearch <- zm_vsearch[1:8,]
-zm_vsearch <- zm_vsearch[order(row.names(zm_vsearch)),]
-rownames(zm_vsearch) <- genus
-zm_vsearch <- tibble::rownames_to_column(zm_vsearch)
-kable(zm_vsearch, digits=2)
+#create dataframe and sort alphabetically
+zymo_df_vsearch <- data.frame(assays(zymo_mock_vsearch)$relabundance)
+zymo_df_vsearch <- zymo_df_vsearch[1:8,]
+zymo_df_vsearch <- zymo_df_vsearch[order(row.names(zymo_df_vsearch)),]
+rownames(zymo_df_vsearch) <- rowname
+zymo_df_vsearch <- tibble::rownames_to_column(zymo_df_vsearch)
+#table
+kable(zymo_df_vsearch, digits=2)
 ```
 
-Merging data frames
+Merging all mock community dataframes
 
-```{r combining_df, warning=FALSE, message=FALSE}
-#merging dataframes and renaming columns
-summary_df <- left_join(comparison, zm_dada, by="rowname")
-summary_df <- left_join(summary_df, zm_vsearch, by="rowname")
-colnames(summary_df) <- c("Genus", "Real", "Dada01", "Dada02", "Dada03", "Dadao4", "Vsearch01", "Vsearch02", "Vsearch03", "Vsearch04")
+```{r combining_data, warning=FALSE, message=FALSE}
+#merge dataframes and rename columns
+summary_df <- left_join(mock, zymo_df_dada, by="rowname")
+summary_df <- left_join(summary_df, zymo_df_vsearch, by="rowname")
+colnames(summary_df) <- c("Genus", "Real", "Dada01", "Dada02", "Dada03",
+                          "Dadao4", "Vsearch01", "Vsearch02", "Vsearch03",
+                          "Vsearch04")
 ```
 
-```{r plot, warning=FALSE, message=FALSE}
+Plotting mock community results
+
+```{r plot_summary, warning=FALSE, message=FALSE}
+#melt summary
 molten_summary <- melt(summary_df, id.vars = 1)
+#plot object
 plot <- ggplot(molten_summary, aes(x=variable,y=value, fill=Genus)) + 
-geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=9) + scale_fill_pander()
+        geom_bar(position="stack", stat = "identity") +
+        theme_fivethirtyeight(base_size=8) + scale_fill_stata()
 plot
 ```
 
-In this sample set, differences between dada and vsearch are minor. However, dada looks more likely to miss taxa.
+In this set, differences between dada and vsearch are minor. However, dada does miss taxa in some samples.
 
-When compared to real composition, some bacteria are underpresented (Salmonella, E. coli) and some overpresented (Bacillus, Streptococcus).
+When compared to real composition, some bacteria are underpresented (*Salmonella, E. coli*) and some overpresented (*Bacillus, Streptococcus*).
 
-Note also, that results compared to original article using Silva reference data are widely different.
+Note also, that results compared to original article using Silva reference data are widely different suggesting there is some problem using Rescue and Silva.
 
 ### Zymo Gut Mock Community Samples
 
-Importing gut mock community data from Qiime 2 files.
+Importing data from Qiime2 to a TreeSummarizedExperiment object. Dimension results describe size of each datatable (number of variants and samples).
 
-```{r import_data_files, message=FALSE, warning=FALSE}
-#dada2 results
-gut_dada <- loadFromQIIME2(featureTableFile="Qiime2_files/gut_mock_community/gut_dada_asv_table.qza", taxonomyTableFile="Qiime2_files/gut_mock_community/gut_dada_taxa.qza", sampleMetaFile="Qiime2_files/gut_mock_community/gut_dada.tsv")
+```{r import_gut_files, message=FALSE, warning=FALSE}
+#dada2_results
+gut_dada <- loadFromQIIME2(
+  featureTableFile= "Qiime2_files/gut_mock_community/gut_dada_asv_table.qza",
+  taxonomyTableFile = "Qiime2_files/gut_mock_community/gut_dada_taxa.qza",
+  sampleMetaFile = "Qiime2_files/gut_mock_community/gut_dada.tsv")
 #clustering_results
-gut_vsearch <- loadFromQIIME2(featureTableFile="Qiime2_files/gut_mock_community/gut_vsearch_otu_table.qza", taxonomyTableFile="Qiime2_files/gut_mock_community/gut_vsearch_taxa.qza", sampleMetaFile="Qiime2_files/gut_mock_community/gut_clust.tsv")
+gut_vsearch <- loadFromQIIME2(
+  featureTableFile = "Qiime2_files/gut_mock_community/gut_vsearch_otu_table.qza",
+  taxonomyTableFile = "Qiime2_files/gut_mock_community/gut_vsearch_taxa.qza",
+  sampleMetaFile = "Qiime2_files/gut_mock_community/gut_clust.tsv")
+dim(gut_dada)
+dim(gut_vsearch)
 ```
 
-Creating dataframe containing true community composition
+Creating dataframe containing true gut community composition
 
 ```{r gut_kit_values, message=FALSE, warning=FALSE}
-#create vectors and alphabetically sorted dataframe containing real mock composition
-Genus <- c("Akkermansia", "Bacteroides", "Bifidobacterium", "Clostridioides", "Clostridium", "E. coli", "Enterococcus", "Faecalibacterium", "Fusobacterium", "Lactobacillus", "Methanobrevibacter", "Prevotella", "Roseburia", "Salmonella", "Veillonella")
-gut_abundance <- c(0.01, 0.099, 0.089, 0.026, 0.000002,0.121,0.00001, 0.176,0.175,0.096,0.001,0.05,0.099,0.0001,0.159)
+#create vectors and alphabetically sorted df containing theoretical composition
+Genus <- c("Akkermansia", "Bacteroides", "Bifidobacterium", "Clostridioides",
+           "Clostridium", "E. coli", "Enterococcus", "Faecalibacterium",
+           "Fusobacterium", "Lactobacillus", "Methanobrevibacter", "Prevotella",
+           "Roseburia", "Salmonella", "Veillonella")
+gut_abundance <- c(0.01, 0.099, 0.089, 0.026, 0.000002, 0.121, 0.00001, 0.176,
+                   0.075, 0.096, 0.001, 0.05, 0.099, 0.0001, 0.159)
 gut_community <- data.frame(Genus, gut_abundance)
 ```
 
-Creating dataframe from dada denoiser results
+Creating dataframe from dada results
 
-```{r mock_dada_df, message=FALSE, warning=FALSE}
-#agglomeration to genus and calculating relabundance
-gut_dada <- agglomerateByRank(gut_dada, rank="Genus",  onRankOnly=TRUE)
+```{r gut_dada_df, message=FALSE, warning=FALSE}
+#agglomerate to genus level and calculate relabundance
+gut_dada <- agglomerateByRank(gut_dada, rank="Genus",
+                              onRankOnly=TRUE)
 gut_dada <- transformAssay(gut_dada, assay.type="counts",
                                  method="relabundance")
-#create dataframe and table alphabetically sorted
+#create dataframe and sort alphbetically
 gdada <- data.frame(assays(gut_dada)$relabundance)
 gdada <- gdada[order(row.names(gdada)),]
-#rownames(gdada) <- genus 
 gdada <- tibble::rownames_to_column(gdada)
-gdada$rowname <- c("Bacteroides","Clostridioides","E. coli","Faecalibacterium","Fusobacterium", "Prevotella","Veillonella")
+#modify genus names to match kit data
+gdada$rowname <- c("Bacteroides","Clostridioides","E. coli",
+                   "Faecalibacterium","Fusobacterium", "Prevotella",
+                   "Veillonella")
 colnames(gdada) <- c("Genus", "Gut01", "Gut02", "Gut03", "Gut04")
+#make table
 kable(gdada, digits=2)
 ```
 
-Melting data and creating plot object
+Melting dataframe and creating plot object
 
-```{r dada plot object, warning=FALSE, message=FALSE}
-#merging data and replacing NA values with 0
+```{r gut_dada_plot, warning=FALSE, message=FALSE}
+#merge data and replace NA values with 0
 dada_kit <- merge(gdada, gut_community, all = TRUE)
 dada_kit[is.na(dada_kit)] <- 0
+#melt and create barplot object
 molten_gutdada <- melt(dada_kit, id.vars = 1)
 plot_dgut <- ggplot(molten_gutdada, aes(x=variable,y=value, fill=Genus)) + 
-geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=9) + scale_fill_pander()
+             geom_bar(position="stack", stat = "identity") +
+             theme_fivethirtyeight(base_size=7) + scale_fill_stata()
 ```
 
 Plotting dada results
@@ -197,39 +235,147 @@ Plotting dada results
 plot_dgut
 ```
 
-In more complex mock community, denoising performance gets markedly worse.
+In more complex mock community, denoising performance gets clearly worse. *Veillonella* and *Prevotella* are overpresented.
 
-```{r mock_vsearch_df, warning=FALSE, message=FALSE}
-#agglomeration to genus and calculating relabundance
-gut_vsearch <- agglomerateByRank(gut_vsearch, rank="Genus", onRankOnly=TRUE)
+Creating dataframe from vsearch results. Some taxa is filtered in order to simplify barplot.
+
+```{r gut_vsearch_df, warning=FALSE, message=FALSE}
+#agglomerate to genus level and calculate relabundance
+gut_vsearch <- agglomerateByRank(gut_vsearch, rank="Genus",
+                                 onRankOnly=TRUE)
 gut_vsearch <- transformAssay(gut_vsearch, assay.type="counts",
                                  method="relabundance")
-#create dataframe and table alphabetically sorted
+#create dataframe and sort alphabetically
 g_vsearch <- data.frame(assays(gut_vsearch)$relabundance)
-#g_vsearch <- zm_vsearch[1:8,]
 g_vsearch <- g_vsearch[order(row.names(g_vsearch)),]
-#rownames(zm_vsearch) <- genus
 g_vsearch <- tibble::rownames_to_column(g_vsearch)
+#modify genus names to match kit
 vsearch_vector <- g_vsearch$rowname
 modified_vector <- sub("^g__", "", vsearch_vector)
 g_vsearch$rowname <- modified_vector
 colnames(g_vsearch) <- c("Genus", "Gut01", "Gut02", "Gut03", "Gut04")
 g_vsearch[11,1] <- "E. coli"
-g_vsearch <- g_vsearch[-c(2,3,6:8,10,14:15,17,20),]
+#remove "zero" results
+g_vsearch <- g_vsearch[-c(2,3,6:8,10,14:15,17,20,22),]
+#print table
 kable(g_vsearch, digits=2)
 ```
 
-```{r dada plot object, warning=FALSE, message=FALSE}
-#merging data and replacing NA values with 0
+```{r gut_vsearch_plot_object, warning=FALSE, message=FALSE}
+#merge and replace NA values with 0
 vsearch_kit <- merge(g_vsearch, gut_community, all = TRUE)
 vsearch_kit[is.na(vsearch_kit)] <- 0
+#melt dataframe
 molten_gutvsearch <- melt(vsearch_kit, id.vars = 1)
-plot_vgut <- ggplot(molten_gutvsearch, aes(x=variable,y=value, fill=Genus)) + 
-geom_bar(position="stack", stat = "identity") + theme_fivethirtyeight(base_size=7) + scale_fill_pander()
+#create plot object
+plot_vgut <- ggplot(molten_gutvsearch, aes(x=variable,
+                    y=value, fill=Genus)) + geom_bar(position="stack",
+                    stat = "identity") + theme_fivethirtyeight(base_size=7) +
+                    scale_fill_stata()
 ```
+
+Plotting vsearch results
 
 ```{r}
 plot_vgut
 ```
 
-Using otu clustering by vsearch results from gut mock community are much better.
+Using otu clustering by vsearch, results from gut mock community are much better. *Enterococcus, Clostridium, Methanobrevibacter and Salmonella* are present in very low proportion in the community and number of sequences is probably too low to recognize them reliably.
+
+### Oral microbiome samples
+
+Importing Qiime 2 files
+
+```{r import_oralmicrobiome_files, message=FALSE, warning=FALSE}
+#dada_results
+saliva_dada <- loadFromQIIME2(
+  featureTableFile = "Qiime2_files/oral_microbiome/oral_dada_asv_table.qza",
+  taxonomyTableFile = "Qiime2_files/oral_microbiome/oral_dada_taxa.qza",
+  sampleMetaFile = "Qiime2_files/oral_microbiome/oral_dada.tsv")
+#clustering_results
+saliva_vsearch <- loadFromQIIME2(
+  featureTableFile = "Qiime2_files/oral_microbiome/oral_vsearch_otu_table.qza",
+  taxonomyTableFile = "Qiime2_files/oral_microbiome/oral_vsearch_taxa.qza",
+  sampleMetaFile = "Qiime2_files/oral_microbiome/oral_clust.tsv")
+#calculate data dimentsions
+dim(saliva_dada)
+dim(saliva_vsearch)
+```
+
+Dada has only 161 variants compared to 2838 vsearch otus
+
+Creating dataframe from dada results
+
+```{r saliva_dada_df, message=FALSE, warning=FALSE}
+#agglomerate to genus and calculate relabundance
+saliva_dada <- agglomerateByRank(saliva_dada, rank="Genus",
+                                 onRankOnly=TRUE)
+saliva_dada <- transformAssay(saliva_dada, assay.type="counts",
+                                 method="relabundance")
+#create dataframe and sort alphabetically
+saliva_dada_df <- data.frame(assays(saliva_dada)$relabundance)
+saliva_dada_df <- saliva_dada_df[order(row.names(saliva_dada_df)),]
+saliva_dada_df <- tibble::rownames_to_column(saliva_dada_df)
+```
+
+Creating dataframe from vsearch results
+
+```{r saliva_vsearch_df, message=FALSE, warning=FALSE}
+#agglomerate to genus and calculate relabundance
+saliva_vsearch <- agglomerateByRank(saliva_vsearch, rank="Genus",  onRankOnly=TRUE)
+saliva_vsearch <- transformAssay(saliva_vsearch, assay.type="counts",
+                                 method="relabundance")
+#create dataframe and sort alphabetically
+saliva_vsearch_df <- data.frame(assays(saliva_vsearch)$relabundance)
+saliva_vsearch_df <- saliva_vsearch_df[order(row.names(saliva_vsearch_df)),]
+saliva_vsearch_df <- tibble::rownames_to_column(saliva_vsearch_df)
+```
+
+Create top10 dataframe for dada taxonomy, example abundance table and plot object
+
+```{r saliva_dada_plot, warning=FALSE, message=FALSE}
+#get top10 dada taxa
+top10_saliva_dada <- getTopTaxa(saliva_dada, top=10, method="sum",
+                                assay_name="relabundance")
+#filter dataframe containing only top10
+saliva_dada_df <- saliva_dada_df %>% filter(rowname %in% top10_saliva_dada)
+molten_saliva_dada_df <- melt(saliva_dada_df, id.vars=1)
+#abundance table as an example
+kable(saliva_dada_df[,1:6],digits=2)
+#create plot object
+plot_saliva_dada <- ggplot(molten_saliva_dada_df, aes(x=variable,y=value,
+                           fill=rowname)) + geom_bar(position="stack",
+                           stat = "identity") +
+                           theme_fivethirtyeight(base_size=7) +
+                           scale_fill_stata()
+```
+
+Create top10 dataframe for vsearch taxonomy, example abundance table and plot object
+
+```{r saliva_vsearch_plot, warning=FALSE, message=FALSE}
+#get top10 dada taxa
+top10_saliva_vsearch <- getTopTaxa(saliva_vsearch, top=10, method="sum",
+                                   assay_name="relabundance")
+#filter dataframe containing only top10
+saliva_vsearch_df <- saliva_vsearch_df %>% filter(rowname %in% top10_saliva_vsearch)
+molten_saliva_vsearch_df <- melt(saliva_vsearch_df, id.vars=1)
+#abundance table as an example
+kable(saliva_vsearch_df[,1:6],digits=2)
+#create plot object
+plot_saliva_vsearch <- ggplot(molten_saliva_vsearch_df, aes(x=variable,y=value,
+                              fill=rowname)) + geom_bar(position="stack",
+                              stat = "identity") +
+                              theme_fivethirtyeight(base_size=7) +
+                              scale_fill_stata()
+```
+
+Plotting both sets
+
+```{r}
+plot_saliva_dada + theme(axis.text.x = element_text(angle=90))
+plot_saliva_vsearch + theme(axis.text.x = element_text(angle=90))
+```
+
+Results from oral microbiome samples suggest that using dada for nanopore reads does result in loss of diversity even for most abundant bacterial taxa.
+
+*Note. Analysed dataset is fairly small, only \~110 000 reads in total.*
