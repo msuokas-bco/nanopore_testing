@@ -1,6 +1,7 @@
 ---
 title: "Nanopore_16S_rRNA_analysis"
-format: pdf
+format: docx
+prefer-html: true
 editor: visual
 ---
 
@@ -113,7 +114,7 @@ zymo_df_dada <- data.frame(assays(zymo_mock_dada)$relabundance)
 zymo_df_dada <- zymo_df_dada[order(row.names(zymo_df_dada)),]
 rownames(zymo_df_dada) <- rowname 
 zymo_df_dada <- tibble::rownames_to_column(zymo_df_dada)
-kable(zymo_df_dada, digits=2)
+kable(zymo_df_dada, digits=2) %>% kable_styling()
 ```
 
 Creating dataframe from vsearch results
@@ -131,7 +132,7 @@ zymo_df_vsearch <- zymo_df_vsearch[order(row.names(zymo_df_vsearch)),]
 rownames(zymo_df_vsearch) <- rowname
 zymo_df_vsearch <- tibble::rownames_to_column(zymo_df_vsearch)
 #table
-kable(zymo_df_vsearch, digits=2)
+kable(zymo_df_vsearch, digits=2) %>% kable_styling()
 ```
 
 Merging all mock community dataframes
@@ -213,7 +214,7 @@ gdada$rowname <- c("Bacteroides","Clostridioides","E. coli",
                    "Veillonella")
 colnames(gdada) <- c("Genus", "Gut01", "Gut02", "Gut03", "Gut04")
 #make table
-kable(gdada, digits=2)
+kable(gdada, digits=2) %>% kable_styling()
 ```
 
 Melting dataframe and creating plot object
@@ -258,7 +259,7 @@ g_vsearch[11,1] <- "E. coli"
 #remove "zero" results
 g_vsearch <- g_vsearch[-c(2,3,6:8,10,14:15,17,20,22),]
 #print table
-kable(g_vsearch, digits=2)
+kable(g_vsearch, digits=2) %>% kable_styling()
 ```
 
 ```{r gut_vsearch_plot_object, warning=FALSE, message=FALSE}
@@ -297,6 +298,8 @@ saliva_vsearch <- loadFromQIIME2(
   featureTableFile = "Qiime2_files/oral_microbiome/oral_vsearch_otu_table.qza",
   taxonomyTableFile = "Qiime2_files/oral_microbiome/oral_vsearch_taxa.qza",
   sampleMetaFile = "Qiime2_files/oral_microbiome/oral_clust.tsv")
+#copying unmodified object
+tse_saliva <- saliva_vsearch
 #calculate data dimentsions
 dim(saliva_dada)
 dim(saliva_vsearch)
@@ -341,7 +344,7 @@ top10_saliva_dada <- getTopTaxa(saliva_dada, top=10, method="sum",
 saliva_dada_df <- saliva_dada_df %>% filter(rowname %in% top10_saliva_dada)
 molten_saliva_dada_df <- melt(saliva_dada_df, id.vars=1)
 #abundance table as an example
-kable(saliva_dada_df[,1:6],digits=2)
+kable(saliva_dada_df[,1:6],digits=2) %>% kable_styling()
 #create plot object
 plot_saliva_dada <- ggplot(molten_saliva_dada_df, aes(x=variable,y=value,
                            fill=rowname)) + geom_bar(position="stack",
@@ -360,7 +363,7 @@ top10_saliva_vsearch <- getTopTaxa(saliva_vsearch, top=10, method="sum",
 saliva_vsearch_df <- saliva_vsearch_df %>% filter(rowname %in% top10_saliva_vsearch)
 molten_saliva_vsearch_df <- melt(saliva_vsearch_df, id.vars=1)
 #abundance table as an example
-kable(saliva_vsearch_df[,1:6],digits=2)
+kable(saliva_vsearch_df[,1:6],digits=2) %>% kable_styling()
 #create plot object
 plot_saliva_vsearch <- ggplot(molten_saliva_vsearch_df, aes(x=variable,y=value,
                               fill=rowname)) + geom_bar(position="stack",
@@ -379,3 +382,23 @@ plot_saliva_vsearch + theme(axis.text.x = element_text(angle=90))
 Results from oral microbiome samples suggest that using dada for nanopore reads does result in loss of diversity even for most abundant bacterial taxa.
 
 *Note. Analysed dataset is fairly small, only \~110 000 reads in total.*
+
+### Taxonomic resolution of full length 16S rRNA sequencing
+
+```{r}
+#tse object dimensions
+total <- dim(tse_saliva)
+#calculate total number of empty results at Genus level
+l6 <-  1- (sum(taxonomyRankEmpty(tse_saliva, rank="Genus"))/total[1])
+#percent of recognized
+#calculate total number of empty results at Species level
+l7 <- 1- (sum(taxonomyRankEmpty(tse_saliva, rank="Species"))/total[1])
+#calculate total number of empty results at Phylum level
+l2 <- 1 - (sum(taxonomyRankEmpty(tse_saliva, rank="Phylum"))/total[1])
+#table
+tax_level <- c("Phylum", "Genus", "Species")
+recognised <- c(l2,l6,l7)
+kable(data.frame(tax_level,recognised), digits=3) %>% kable_styling()
+```
+
+80 % of otus are recognized at genus level and 47,6 % at species level. It also seems that 20 % of results are either non-bacterial or unknown origin.
