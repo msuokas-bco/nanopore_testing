@@ -402,3 +402,5 @@ kable(data.frame(tax_level,recognised), digits=3) %>% kable_styling()
 ```
 
 80 % of otus are recognized at genus level and 47,6 % at species level. It also seems that 20 % of results are either non-bacterial or unknown origin.
+
+Mia package contains large GlobalPatterns example dataset in which only 42 % of features are classified at genus level.
